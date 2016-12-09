@@ -11,6 +11,9 @@
 // 12/01/2016   rjw 1.5 added prime pb in manual mode, turn light on in manual mode
 // 12/05/2016   rjw 1.6 cleaned up manual mode extensively, formatted, and made timers variable
 #define Version        1.60
+const int  pumpRevTime =     2000;  // time to reverse pump to pull fluid away from sipper tube in milliseconds
+const int  pumpOnLimit =     pumpRevTime + 500; // longer than reverse time
+const unsigned int ManualModeLimit = 30000;  // time where no chars received b4 going into manual in milliseconds
 
 
 // ----------------------------------------------------------------------------------------------------
@@ -29,13 +32,6 @@
 // Z       NOOP        z         NOOP            Tablet to Arduino
 // ----------------------------------------------------------------------------------------------------
 
-//PIN	 I/O/A	DESCRIPTION
-// -----------------------------------------------------
-// D6	 OP     PUMP MOTOR / SOLENOID VALVE Combination
-// D13 OP     Board Run Light (blinky)
-// D14 OP     Feed light
-
-
 #include <SoftwareSerial.h>
 #define bluetoothRx    9  // RX-I
 #define bluetoothTx    8  // TX-O 
@@ -43,22 +39,21 @@
 #define feed_lt        2
 #define pb_lt          4
 #define pb             6
-#define pumpOnLimit        30000  // time to limit pump in Auto in milliseconds
-#define pumpRevTime         3000  // time to reverse pump to pull fluid away from sipper tube in milliseconds
-#define ManualModeLimit    30000  // time where no chars received b4 going into manual to allow pump priming in milliseconds
-#define BlinkTime           1000
+#define enablePin      5 // Uno and similar boards, pins 5 and 6 have a frequency of approximately 980 Hz
+#define in1Pin         3
+#define in2Pin         11
+#define solenoid       10
+
+
 
 // Bluetooth instantiation
 SoftwareSerial bluetooth(bluetoothTx, bluetoothRx);
 
 // Variable definition and initiation
-int           enablePin = 5;  // Uno and similar boards, pins 5 and 6 have a frequency of approximately 980 Hz
-int           in1Pin    = 3;
-int           in2Pin    = 11;
-int           solenoid  = 10;
-int           speed     = 0;
-boolean       reverse   = false;
 
+int           PumpSpeed         = 0;
+boolean       reverse           = false;
+const int     BlinkTime         = 1000; 
 long          previousMillis    = 0;            // will store last time run LED was updated
 long          interval          = BlinkTime;    // interval at which to blink (milliseconds)
 int           divisor           = 1;            // easy way to change the blink rate of LED
@@ -152,14 +147,14 @@ char processCommand(char c1) {
   switch (c1) {
     case 'A':
       Feed_LtOff();
-      PumpOff();
+      PumpOffReverse();
       Serial.write("a\n");
       bluetooth.print("a\n");
       return 0;
       break;
 
     case 'B':
-      PumpOn();
+      PumpOnFWD();
       Feed_LtOn();
       Serial.write("b\n");
       bluetooth.print("b\n");
@@ -167,12 +162,12 @@ char processCommand(char c1) {
       break;
 
     case 'C':
-      PumpOn();
+      PumpOnFWD();
       return 0;
       break;
 
     case 'D':
-      PumpOff();
+      PumpOffReverse();
       return 0;
       break;
 
@@ -210,6 +205,7 @@ char readSerialPort(void) {
   // Don't read unless you know there is data
   while (Serial.available() > 0) {
     if (ManualMode) ManualModeOff();    // whenever we get a character reset manual mode
+    ManualTimer = millis();             // need to reset timer with every char received
     inChar = Serial.read();
     if ((inChar >= 65) && (inChar <= 90)) {     // ascii A through Z
       processCommand(inChar);
@@ -223,6 +219,7 @@ char readBlueTooth(void) {
 
   while (bluetooth.available() > 0) {
     if (ManualMode) ManualModeOff();  // whenever we get a bt character reset manual mode
+    ManualTimer = millis();             // need to reset timer with every char received
     Serial.print("bluetooth.available() = ");  //debug
     Serial.println(bluetooth.available());    //debug
 
@@ -272,33 +269,46 @@ void Feed_LtOff(void) {
 } //FeedLtOff
 // FeedLightOff ///////////////////////////////////////////////////////////
 
-// setMotor spped and direction //////////////////////////////////////////
-void setMotor(int speed, boolean reverse)
+// setMotor Pump Speed and direction //////////////////////////////////////////
+void setMotor(int PumpSpeed, boolean reverse)
 {
   digitalWrite(solenoid, HIGH);
   digitalWrite(in1Pin, ! reverse);
   digitalWrite(in2Pin, reverse);
-  analogWrite(enablePin, speed); // Uno and similar boards, pins 5 and 6 have a frequency of approximately 980 Hz
+  analogWrite(enablePin, PumpSpeed); // Uno and similar boards, pins 5 and 6 have a frequency of approximately 980 Hz
 }
 // setMotor spped and direction //////////////////////////////////////////
 
-// PumpOn ///////////////////////////////////////////////////////////
-void PumpOn(void) {
-  reverse = false; speed = 200;
-  setMotor(speed, reverse);
+// PumpOnFWD ///////////////////////////////////////////////////////////
+void PumpOnFWD(void) {
+  reverse = false; 
+  PumpSpeed = 225;  // was 200
+  setMotor(PumpSpeed, reverse);
   pumpOnMillis = millis();
   pumpOn = true;
   Serial.write("c\n"); bluetooth.print("c\n");
-} //PumpOn
+} //PumpOnFWD
 
-// PumpOff ///////////////////////////////////////////////////////////
-void PumpOff(void) {
-  // first run the pump in reverse to relieve sipper pressure
+// PumpOnREV ///////////////////////////////////////////////////////////
+void PumpOnREV(void) {
+  reverse = true; 
+  PumpSpeed = 225;  // was 200
+  setMotor(PumpSpeed, reverse);
+  pumpOnMillis = millis();
+  pumpOn = true;
+  Serial.write("c\n"); bluetooth.print("c\n");
+} //PumpOnFWD
+
+
+// PumpOffReverse ///////////////////////////////////////////////////////////
+// Stops and reverses pump to pull liquid from feed line and sipper tube
+void PumpOffReverse(void) {
+  // first stop, delay then run the pump in reverse to relieve sipper pressure
   analogWrite(enablePin, 0);
   delay(250);
   reverse = true;
-  speed   = 200;
-  setMotor(speed, reverse);
+  PumpSpeed   = 225;  // was 200
+  setMotor(PumpSpeed, reverse);
   delay(pumpRevTime);
 
   // second turn off the pump totally
@@ -308,8 +318,23 @@ void PumpOff(void) {
   digitalWrite(solenoid, 0);
   pumpOn = false;
   Serial.write("d\n"); bluetooth.print("d\n");
-} //PumpOff
-// PumpOff ///////////////////////////////////////////////////////////
+} //PumpOffReverse
+// PumpOffReverse ///////////////////////////////////////////////////////////
+
+// PumpStop ///////////////////////////////////////////////////////////
+// Stops the pump, no reversal
+void PumpStop(void) {
+  // second turn off the pump totally
+  analogWrite(enablePin, 0);
+  digitalWrite(in1Pin, 0);
+  digitalWrite(in2Pin, 0);
+  digitalWrite(solenoid, 0);
+  pumpOn = false;
+  Serial.write("d\n"); bluetooth.print("d\n");
+} //PumpStop
+// PumpStop ///////////////////////////////////////////////////////////
+
+
 
 // ManualModeOff /////////////////////////////////////////////////
 void ManualModeOff(void) {
@@ -361,17 +386,17 @@ void loop()
   // if we are in manual mode check for PB actuation
   if (ManualMode) {
     if ((digitalRead(pb) == LOW) and !(pumpOn))  {
-      PumpOn();
+      PumpOnFWD();
     }
     if ((digitalRead(pb) == HIGH) and (pumpOn)) {
-      PumpOff();
+      PumpOffReverse();
     }
   }
 
   // If pump is turned on for more than pumpOnLimit, turn it off
   if ((pumpOn) and !(ManualMode)) {
     if (millis() - pumpOnMillis > pumpOnLimit) {
-      PumpOff();
+      PumpStop(); // TURN THE PUMP OFF
       Serial.write("d - due to timeout\n"); bluetooth.print("d\n");
     }
   }
