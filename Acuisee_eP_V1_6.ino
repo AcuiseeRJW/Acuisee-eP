@@ -400,7 +400,7 @@ void loop()
   if ((pumpOn) and !(ManualMode)) {
     if (millis() - pumpOnMillis > pumpOnLimit) {
       PumpStop(); // TURN THE PUMP OFF
-      Serial.write("d - due to timeout\n"); bluetooth.print("d\n");
+      Serial.write("due to timeout\n"); 
     }
   }
 
