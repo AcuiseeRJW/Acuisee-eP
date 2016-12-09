@@ -10,9 +10,12 @@
 // 11/03/2016   rjw 1.4 integrate L293DD board
 // 12/01/2016   rjw 1.5 added prime pb in manual mode, turn light on in manual mode
 // 12/05/2016   rjw 1.6 cleaned up manual mode extensively, formatted, and made timers variable
-#define Version        1.60
-const int  pumpRevTime =     2000;  // time to reverse pump to pull fluid away from sipper tube in milliseconds
-const int  pumpOnLimit =     pumpRevTime + 500; // longer than reverse time
+// ----------------------------------------------------------------------------------------------------
+
+
+#define Version    1.60
+const int          pumpRevTime =     2000;  // time to reverse pump to pull fluid away from sipper tube in milliseconds
+const int          pumpOnLimit =     pumpRevTime + 500; // longer than reverse time
 const unsigned int ManualModeLimit = 30000;  // time where no chars received b4 going into manual in milliseconds
 
 
